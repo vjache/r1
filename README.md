@@ -10,7 +10,7 @@ R1 - Простейший робот основанный на Ардуино
 4. [Плата расширения управления двигателями (Motor Shield)](http://amperka.ru/product/arduino-motor-shield)
 5. [Плата расширения для дополнительного оборудования (TroykaShield)](http://amperka.ru/product/arduino-troyka-shield)
 6. [Малая макетная плата] (http://amperka.ru/product/breadboard-mini)
-7. [Ультразвуковой дальномер (соннар)] (http://amperka.ru/product/hc-sr04-ultrasonic-sensor-distance-module)
+7. [Ультразвуковой дальномер (сонар)] (http://amperka.ru/product/hc-sr04-ultrasonic-sensor-distance-module)
 8. [Компас](http://amperka.ru/product/troyka-magnetometer-compass)
 9. 4 батарейки AA -- питание для двигателей
 10. 1 крона -- питание для "мозгов"
