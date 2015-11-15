@@ -37,20 +37,20 @@ class ChassisDev {
     }
   private:
     void setSpeed(int lft, int rgt) {
-      
-        if (lft < 0)
-          digitalWrite(DIR_LFT, LOW);
-        else
-          digitalWrite(DIR_LFT, HIGH);
 
-        if (rgt < 0)
-          digitalWrite(DIR_RGT, LOW);
-        else
-          digitalWrite(DIR_RGT, HIGH);
+      if (lft < 0)
+        digitalWrite(DIR_LFT, LOW);
+      else
+        digitalWrite(DIR_LFT, HIGH);
 
-        analogWrite(SPEED_LFT, abs(lft));
-        analogWrite(SPEED_RGT, abs(rgt));
-       
+      if (rgt < 0)
+        digitalWrite(DIR_RGT, LOW);
+      else
+        digitalWrite(DIR_RGT, HIGH);
+
+      analogWrite(SPEED_LFT, abs(lft));
+      analogWrite(SPEED_RGT, abs(rgt));
+
     }
 };
 
@@ -207,6 +207,7 @@ class Algorithm {
     CompassDev compass;
     SonarDev   sonar;
     Log _log = Log(false);
+    int prevDir = -1;
   protected:
     void scan_dirs(int timeout, array_pings& pings) {
       array_pings counts;
@@ -253,7 +254,9 @@ class Algorithm {
     };
 
     void turnTo(int s) {
-      chassis.rotate(ROT_SPEED);
+      int s0 = compass.azimuth() / SLOT_DEGREES;
+
+      chassis.rotate(turnDir(s0, s)*ROT_SPEED);
 
       while ((compass.azimuth() / SLOT_DEGREES) != s)
         delay(50);
@@ -270,6 +273,8 @@ class Algorithm {
       int dmax = 0;
       int dir = -1;
       for (int i = 0; i < PINGS_ARRAY_SIZE; i++) {
+        if (isAvoidedDir(i))
+          continue;
         int di = pings[i];
         if (di > dmax)
         {
@@ -277,8 +282,35 @@ class Algorithm {
           dir = i;
         }
       }
+      prevDir = dir;
       return dir;
     }
+    /**
+     * Avoid to choose opposite direction 90 degree angle.
+     */
+    bool isAvoidedDir(int d) {
+      if (prevDir == -1 )
+        return false;
+      for (int i = -1; i <= 1; i++)
+        if (((prevDir + 6 + i) % PINGS_ARRAY_SIZE) == d)
+          return true;
+      return false;
+    }
+
+    int sign(int a) {
+      if (a < 0) return -1;
+      return 1;
+    }
+
+    int turnDir(int i0, int i) {
+      const int half = PINGS_ARRAY_SIZE / 2;
+      int d = i - i0;
+      if (abs(d) <= half)
+        return sign(d);
+      else
+        return -sign(d);
+    }
+    
   public:
     static void setup() {
       ChassisDev::setup();
