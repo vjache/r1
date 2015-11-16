@@ -202,6 +202,55 @@ class Log {
     }
 };
 
+#define STICK_DETECTOR_HISTORY_SIZE 30
+class StickDetector {
+    // Init distance history
+    int dhist[STICK_DETECTOR_HISTORY_SIZE];
+    int k = -1;
+  public:
+    StickDetector() {
+      for (int i = 0; i < STICK_DETECTOR_HISTORY_SIZE; i++)
+        dhist[i] = 0;
+    }
+
+    bool push(int distance) {
+      k ++;
+      int j = k % STICK_DETECTOR_HISTORY_SIZE;
+      dhist[k] = distance;
+
+      if (k >= STICK_DETECTOR_HISTORY_SIZE) {
+        int mx = 0;
+        int mn = 10000;
+        float summ = 0;
+        for (int i = 0; i < STICK_DETECTOR_HISTORY_SIZE; i++)
+        {
+          summ += dhist[i];
+
+          if (dhist[i] < mn)
+            mn = dhist[i];
+          if (dhist[i] > mx)
+            mx = dhist[i];
+        }
+
+        float avg = summ / (float)STICK_DETECTOR_HISTORY_SIZE;
+
+        summ = 0;
+        for (int i = 0; i < STICK_DETECTOR_HISTORY_SIZE; i++)
+        {
+          float e = avg - ((float)dhist[i]);
+          summ += e * e;
+        }
+
+        float d = sqrt(summ / (float)STICK_DETECTOR_HISTORY_SIZE);
+
+        if ( d < 5 )
+          return true;
+      }
+
+      return false;
+    }
+};
+
 class Algorithm {
     ChassisDev chassis;
     CompassDev compass;
@@ -222,6 +271,13 @@ class Algorithm {
         counts[s] ++;
         delay(dt);
         timeout -= dt;
+
+        for (int i = 0; i < PINGS_ARRAY_SIZE; i++) {
+          if (counts[i] < 5)
+            continue;
+        }
+
+        break;
       }
 
       _log.print_array_pings("Counts", counts);
@@ -232,10 +288,56 @@ class Algorithm {
       }
     };
 
-    void move() {
+    /**
+     * Returns true if new free direction found, otherwise false.
+     */
+    bool find_dir_fast(int timeout) {
+      chassis.rotate(ROT_SPEED);
+      const int dt = 60;
+      while (timeout > 0)
+      {
+        if (sonar.distance() > 80)
+        {
+          chassis.stop();
+          return true;
+        }
+        delay(dt);
+        timeout -= dt;
+      }
+      chassis.stop();
+      return false;
+    }
+
+    /**
+      * Returns true if new free direction found, otherwise false.
+      */
+    bool find_dir_total(int timeout) {
+      chassis.rotate(ROT_SPEED);
+      array_pings pings;
+      scan_dirs(timeout, pings);
+      int slot = chooseDir(pings);
+      if (slot == -1)
+        return false;
+      turnTo(slot);
+      return true;
+    }
+
+    void rollback() {
+      chassis.move(150);
+      delay(1000);
+      chassis.stop();
+    }
+
+    bool move() {
+
+      StickDetector det;
 
       while (true) {
         int d = sonar.distance();
+
+        // If stick detected then return with 'false'
+        if (det.push(d))
+          return false;
 
         if (d > 200)
           chassis.move(180);
@@ -244,16 +346,18 @@ class Algorithm {
         else if (d > 80)
           chassis.move(120);
         else if (d > 30)
-          chassis.move(110);
+          chassis.move(100);
         else break;
 
         delay(50);
       }
 
       chassis.stop();
+      return true;
     };
 
     void turnTo(int s) {
+      if (s == -1) return;
       int s0 = compass.azimuth() / SLOT_DEGREES;
 
       chassis.rotate(turnDir(s0, s)*ROT_SPEED);
@@ -273,8 +377,6 @@ class Algorithm {
       int dmax = 0;
       int dir = -1;
       for (int i = 0; i < PINGS_ARRAY_SIZE; i++) {
-        if (isAvoidedDir(i))
-          continue;
         int di = pings[i];
         if (di > dmax)
         {
@@ -282,7 +384,6 @@ class Algorithm {
           dir = i;
         }
       }
-      prevDir = dir;
       return dir;
     }
     /**
@@ -298,7 +399,8 @@ class Algorithm {
     }
 
     int sign(int a) {
-      if (a < 0) return -1;
+      if (a < 0)
+        return -1;
       return 1;
     }
 
@@ -310,56 +412,49 @@ class Algorithm {
       else
         return -sign(d);
     }
-    
+
+    void calibrate() {
+      // 1. Start rotation
+      chassis.rotate(ROT_SPEED);
+      // 2. Calibrate compass while rotating
+      compass.calibrate(10000);
+      // 3. Stop rotation
+      chassis.stop();
+      // 4. Marker delay
+      delay(1000);
+    }
+
   public:
     static void setup() {
       ChassisDev::setup();
       CompassDev::setup();
       SonarDev::setup();
     }
+
     static void reset_array_pings(array_pings& arr) {
       for (int i = 0; i < PINGS_ARRAY_SIZE; i++)
         arr[i] = 0;
     }
 
     void run() {
-
-      _log.println("0. Started");
       // Lets begin.
+      _log.println("0. Started");
       // 1. Sleep for a while, zzzzz...
       chassis.stop();
-      delay(15000);
-      // 2. Start rotation
-      chassis.rotate(ROT_SPEED);
-      // 3. Calibrate compass while rotating
-      _log.println("1. Calibrating.");
-      compass.calibrate(10000);
-      _log.println("2. Calibrated.");
-      chassis.stop();
-      delay(1000);
-      for (int i = 0; i < 20; i++) {
-        array_pings pings;
-        reset_array_pings(pings);
-        // 4.
-        _log.println("3. Scaning.");
-        chassis.rotate(ROT_SPEED);
-        // 5. While rotating use sonar to scan obstacle distances
-        scan_dirs(3000, pings);
-        _log.print_array_pings("3.1. Scanned", pings);
-        // 6. Stop!
-        chassis.stop();
-        delay(1000);
-        // 7. Choose direction to move
-        int dirSlot = chooseDir(pings);
-        _log.println("4. Choose dir:", dirSlot);
-        if (dirSlot == -1)
-          return;
-        // 8. Turn
-        _log.println("5. Turning.");
-        turnTo(dirSlot);
-        // 9. Move
-        _log.println("5. Moving!");
+      delay(3000);
+      calibrate();
+      for (int j = 0; j < 10; j++) {
+        // Scan 360, choose azimuth with max distance and turn
+        if (!find_dir_total(4000))
+          break;
         move();
+        for (int i = 0; i < 10; i++) {
+          // Turn until distance become > 80 cm
+          if (!find_dir_fast(1500))
+            break;
+          if (!move())
+            break;
+        }
       }
     }
 };
